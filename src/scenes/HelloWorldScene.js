@@ -1,39 +1,99 @@
 import Phaser from 'phaser'
+import { io } from "socket.io-client";
 
 export default class HelloWorldScene extends Phaser.Scene
 {
 	constructor()
 	{
-		super('hello-world')
+		super('hello-world');
+        this.players = {};
+        this.speed = 100;
 	}
 
 	preload()
     {
-        this.load.setBaseURL('http://labs.phaser.io')
+        this.load.atlas('player' , 'assets/Character/fauna.png' , 'assets/Character/Character.json' );
+        this.socket = io("http://localhost:9001");
 
-        this.load.image('sky', 'assets/skies/space3.png')
-        this.load.image('logo', 'assets/sprites/phaser3-logo.png')
-        this.load.image('red', 'assets/particles/red.png')
     }
 
     create()
     {
-        this.add.image(400, 300, 'sky')
+        this.player = this.physics.add.sprite(120 , 100 , 'player');
+        this.cursor = this.input.keyboard.createCursorKeys();
 
-        const particles = this.add.particles('red')
+        this.socket.on('socketConfirmation' , arg => {
+            this.socket.id = arg.id
+            console.log('my socket id is ' , this.socket.id);
+            this.player.x = arg.x;
+            this.player.y = arg.y;
+        });
 
-        const emitter = particles.createEmitter({
-            speed: 100,
-            scale: { start: 1, end: 0 },
-            blendMode: 'ADD'
-        })
 
-        const logo = this.physics.add.image(400, 100, 'logo')
+        this.socket.on('newUser' , arg => {
+            console.log('new user connected to the room');
+            let x = Math.random() * 780;
+            let y = Math.random() * 600;
+            this.addNewPlayer(arg , x , y);
+        });
 
-        logo.setVelocity(100, 200)
-        logo.setBounce(1, 1)
-        logo.setCollideWorldBounds(true)
+        this.socket.emit('getAllUsers' , null);
 
-        emitter.startFollow(logo)
+        this.socket.on("allUsers" , arg => {
+
+            console.log('user list is ' , arg);
+
+            for(let i = 0; i < arg.length; i++){
+                let x = Math.random()*780;
+                let y = Math.random()*600;
+                this.addNewPlayer(arg[i] , x , y);
+            }
+
+            this.physics.add.overlap(this.player, Object.values(this.players)[0] , this.handleCollide);
+
+        });
+
+        this.socket.on('playerMoved' , arg => {
+            this.players[arg.id].x = arg.x;
+            this.players[arg.id].y = arg.y;
+
+        });
+
+        this.socket.on('userDisconnected' , arg => {
+            this.players[arg].destroy();
+        });
+
+
+
     }
+
+    update(){
+
+        if(this.cursor.left.isDown){
+            this.player.setVelocity(-this.speed , 0);
+            this.socket.emit('playerMoved' , {id : this.socket.id , x : this.player.x , y : this.player.y , direction : 'left'});
+        }else if(this.cursor.right.isDown){
+            this.player.setVelocity(this.speed , 0); 
+            this.socket.emit('playerMoved' , {id : this.socket.id , x : this.player.x , y : this.player.y , direction : 'right'});
+        }else if(this.cursor.up.isDown){
+            this.player.setVelocity(0 , -this.speed);
+            this.socket.emit('playerMoved' , {id : this.socket.id , x : this.player.x , y : this.player.y , direction : 'up'});
+        }else if(this.cursor.down.isDown){
+            this.player.setVelocity(0 , this.speed);
+            this.socket.emit('playerMoved' , {id : this.socket.id , x : this.player.x , y : this.player.y , direction : 'down'});
+        }else{
+            this.player.setVelocity(0 , 0 );
+        }
+
+    }
+
+    addNewPlayer(id , x , y){
+        this.players[id] = this.physics.add.sprite(x , y , 'player');
+    }
+
+    handleCollide(){
+        console.log('player collide');
+    }
+
+
 }
